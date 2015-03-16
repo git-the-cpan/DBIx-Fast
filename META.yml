@@ -21,4 +21,4 @@ requires:
   DBI: '1.6'
   Moo: '1'
   perl: '5.006'
-version: '0.01'
+version: '0.02'
