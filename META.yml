@@ -18,7 +18,8 @@ no_index:
     - t
     - inc
 requires:
-  DBI: '1.6'
+  DBIx::Connector: '0.53'
+  DateTime::Format::MySQL: '0.04'
   Moo: '1'
   perl: '5.006'
-version: '0.02'
+version: '0.03'

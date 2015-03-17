@@ -12,14 +12,15 @@ WriteMakefile(
     PL_FILES         => {},
     MIN_PERL_VERSION => 5.006,
     CONFIGURE_REQUIRES => {
-        'ExtUtils::MakeMaker' => 0,
+	'ExtUtils::MakeMaker' => 0,
     },
     BUILD_REQUIRES => {
-        'Test::More' => 0,
+	'Test::More' => 0,
     },
     PREREQ_PM => {
-        'DBI'              => 1.6,
-        'Moo' => 1,
+	'DBIx::Connector' => 0.53,
+	'Moo' => 1,
+	'DateTime::Format::MySQL' => 0.04,
     },
     dist  => { COMPRESS => 'gzip -9f', SUFFIX => 'gz', },
     clean => { FILES => 'DBIx-Fast-*' },

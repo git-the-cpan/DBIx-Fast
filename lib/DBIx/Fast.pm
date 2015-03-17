@@ -3,13 +3,13 @@ package DBIx::Fast;
 use strict;
 use warnings FATAL => 'all';
 
-our $VERSION = '0.02';
+our $VERSION = '0.03';
 
 #use Carp 'croak';
 use Moo;
-use DBI;
 use DBIx::Connector;
 use DateTime::Format::MySQL;
+use Data::Dumper;
 
 has db  => ( is => 'rw' );
 has sql => ( is => 'rw' );
@@ -17,19 +17,7 @@ has p   => ( is => 'rw' );
 has last_id => ( is => 'rw');
 has results => ( is => 'rw');
 has errors => ( is => 'rw');
-has error => ( is => 'rwp');
-has args => ( is => 'rwp');
-
-sub set_args {
-    my $self = shift;
-    my @args = @_;
-
-    $self->p(\@args);
-}
-
-sub get_args {
-    my $self = shift;
-}
+has dbd => ( is => 'rwp');
 
 sub set_error {
     my $self = shift;
@@ -61,6 +49,9 @@ sub BUILD {
 				    } )
 	);
 
+    $args->{host} eq 'sqlite' ? $self->_set_dbd('sqlite') :
+	$self->_set_dbd('mysql');
+
     $self->db->dbh->{HandleError} = sub {
 	$self->set_error($DBI::err,$DBI::errstr);
     };
@@ -72,11 +63,14 @@ sub BUILD {
     $self->db->mode('ping');
 }
 
+=doc
+    Save profile with the PID
+=cut
 sub profile {
     my $self = shift;
     my $stat = shift."/DBI::ProfileDumper/";
 
-    $stat .= "File:dbix-fast.prof";
+    $stat .= qq{File:dbix-fast-$$.prof};
 
     $self->db->dbh->{Profile} = $stat;
 }
@@ -108,6 +102,40 @@ sub hash {
     my $res = $sth->fetchrow_hashref;
 
     $self->results($res) unless $DBI::err;
+}
+
+# Return one value
+sub val {
+    my $self = shift;
+
+    $self->q(@_);
+
+    return $self->db->dbh->selectrow_array($self->sql, undef, @{$self->p});
+}
+
+sub count {
+    my $self  = shift;
+    my $table = shift;
+    my $skeel = shift;
+    my @p;
+    my $sql = "SELECT COUNT(*) FROM $table";
+
+    unless ( $skeel ) {
+	return $self->db->dbh->selectrow_array($sql);
+    }
+
+    $skeel->{action} //= '=';
+
+    $sql .= " WHERE ";
+
+    for my $K ( keys %{$skeel->{where}} ) {
+	push @p,$skeel->{where}->{$K};
+	$sql .= qq{$K $skeel->{action} ? };
+    }
+
+    $sql =~ s/,$//;
+
+    return $self->db->dbh->selectrow_array($sql, undef, @p);
 }
 
 sub execute {
@@ -157,7 +185,7 @@ sub update {
 
     my $sql = "UPDATE $table SET ";
 
-    for ( keys $skeel->{sen} ) {
+    for ( keys %{$skeel->{sen}} ) {
 	push @p,$skeel->{sen}->{$_};
 	$sql .= $_.' = ? ,';
     }
@@ -165,7 +193,7 @@ sub update {
     $sql =~ s/,$//;
     $sql .= 'WHERE ';
 
-    for my $K ( keys $skeel->{where} ) {
+    for my $K ( keys %{$skeel->{where}} ) {
 	push @p,$skeel->{where}->{$K};
 	$sql .= $K.' = ? ,';
     }
@@ -187,7 +215,7 @@ sub insert {
 
     my $sql= "INSERT INTO $table ( ";
 
-    for ( keys $skeel ) {
+    for ( keys %{$skeel} ) {
        push @p,$skeel->{$_};
        $sql .= $_.',';
     }
@@ -198,7 +226,12 @@ sub insert {
     $self->sql($sql);
     $self->execute_prepare(@p);
 
-    $self->last_id($self->db->dbh->{mysql_insertid});
+    if ( $self->dbd eq 'mysql' ) {
+	$self->last_id($self->db->dbh->{mysql_insertid});
+    } elsif ( $self->dbd eq 'sqlite' ) {
+	$self->last_id($self->db->dbh->sqlite_last_insert_rowid());
+    }
+
 }
 
 sub delete {
@@ -209,7 +242,7 @@ sub delete {
 
     my $sql = "DELETE FROM $table WHERE ";
 
-    for ( keys $skeel ) {
+    for ( keys %{$skeel} ) {
 	push @p,$skeel->{$_};
 	$sql .= $_.' = ? ,';
     }
@@ -226,7 +259,6 @@ sub delete {
 
     time : NOW()
 =cut
-
 sub extra_args {
     my $self  = shift;
     my $skeel = shift;
@@ -246,7 +278,7 @@ sub make_sen {
     my @p;
 
     ## Ha de encontrar resultados por el orden de entrada parsear debidamente
-    for ( keys $skeel ) {
+    for ( keys %{$skeel} ) {
 	my $arg = ':'.$_;
 	push @p,$skeel->{$_};
 	$sql =~ s/$arg/\?/;
@@ -255,7 +287,7 @@ sub make_sen {
     $sql =~ s/,$//;
 
     $self->sql($sql);
-    $self->set_args(@p);
+    $self->p(\@p);
 }
 
 sub q {
@@ -266,7 +298,7 @@ sub q {
     map { push @p,$_ } @_;
 
     $self->sql($sql);
-    $self->set_args(@p);
+    $self->p(\@p);
 }
 
 sub execute_prepare {
@@ -277,5 +309,18 @@ sub execute_prepare {
 
     $sth->execute(@p);
 }
+
+=head1 SYNOPSIS
+
+    $db = DBIx::Fast->new( db => 'test' , user => 'test' , passwd => 'test');
+
+    $db = DBIx::Fast->new( db => 'test' , user => 'test' , passwd => 'test',
+    trace => '1' , profile => '!Statement:!MethodName' );
+
+=head1 DESCRIPTION
+
+=head1 SUBROUTINES/METHODS
+
+=cut
 
 1;
